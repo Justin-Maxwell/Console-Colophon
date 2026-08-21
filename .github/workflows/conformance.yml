@@ -1,0 +1,44 @@
+# The vendored derivation is checked against Repository-Identicon's pinned
+# vectors on every push. A copy that is not checked is a fork waiting to
+# happen.
+name: conformance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: suite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Standard library only, so the floor is whatever the oldest supported
+        # Python is rather than a dependency.
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run the suite
+        run: python3 -m unittest discover -s tests -t tests -v
+
+  offline:
+    name: nothing reaches the network
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No imports that could fetch anything
+        run: |
+          if grep -rnE '^\s*(import|from)\s+(urllib|http|socket|requests|ssl)\b' \
+               --include='*.py' . ; then
+            echo "::error::a networking import appeared in the tree"
+            exit 1
+          fi
+          echo "no networking imports"

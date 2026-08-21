@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+# Editor swap files.
+*.swp
+*.swo
+*~
+.*.sw?

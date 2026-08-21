@@ -1,0 +1,132 @@
+[
+ {
+  "key": "github.com/justin-maxwell/claude-state-panel",
+  "md5": "bd32360bd85dc654e2364bdf790d9ed5",
+  "grid": [
+   "01010",
+   "01010",
+   "10001",
+   "10101",
+   "01010"
+  ],
+  "foreground": "#2692d9",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "github.com/justin-maxwell/glyph-hunter",
+  "md5": "82cc008769aa7febc43b29b4488b530f",
+  "grid": [
+   "11111",
+   "11111",
+   "00100",
+   "01110",
+   "10101"
+  ],
+  "foreground": "#26b4d9",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "github.com/justin-maxwell/sentry-mcp",
+  "md5": "6695dafe7af242db44d362a6426a36c5",
+  "grid": [
+   "01110",
+   "10101",
+   "11011",
+   "10001",
+   "01010"
+  ],
+  "foreground": "#d9c826",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "github.com/justin-maxwell/markright",
+  "md5": "df05e11f65ae44b83a0d1c8ed34457eb",
+  "grid": [
+   "10001",
+   "10001",
+   "10101",
+   "11011",
+   "00100"
+  ],
+  "foreground": "#b1d926",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "gitlab.com/justin-maxwell/claude-state-panel",
+  "md5": "7f9d99c8f62dd2024631ebce0c4fefc3",
+  "grid": [
+   "10001",
+   "01010",
+   "01010",
+   "10001",
+   "11011"
+  ],
+  "foreground": "#9426d9",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "github.com/torvalds/linux",
+  "md5": "93e6446bd86471f4e0bcdc7bbc004b04",
+  "grid": [
+   "11011",
+   "11011",
+   "00100",
+   "00100",
+   "01110"
+  ],
+  "foreground": "#8026d9",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "Code/Projects/MarkRight",
+  "md5": "8f324116d08826afef39fb29e4ee047c",
+  "grid": [
+   "10101",
+   "10001",
+   "11011",
+   "10101",
+   "11111"
+  ],
+  "foreground": "#41d926",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "/opt/checkouts/Thing",
+  "md5": "166185c80e8b9dc314462032e0c8433f",
+  "grid": [
+   "10001",
+   "01110",
+   "01110",
+   "01010",
+   "11111"
+  ],
+  "foreground": "#d95b26",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "",
+  "md5": "d41d8cd98f00b204e9800998ecf8427e",
+  "grid": [
+   "11011",
+   "10101",
+   "00000",
+   "11011",
+   "10101"
+  ],
+  "foreground": "#c026d9",
+  "background": "#f0f0f0"
+ },
+ {
+  "key": "a",
+  "md5": "0cc175b9c0f1b6a831c399e269772661",
+  "grid": [
+   "00100",
+   "00100",
+   "00100",
+   "11011",
+   "11011"
+  ],
+  "foreground": "#2677d9",
+  "background": "#f0f0f0"
+ }
+]
