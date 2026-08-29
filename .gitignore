@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+
+# Editor swap files.
+*.swp
+*.swo
+*~
+.*.sw?
+
+# Rollback copies the specification tool leaves beside what it replaced.
+*.prior.*

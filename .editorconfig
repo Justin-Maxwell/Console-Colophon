@@ -1,0 +1,29 @@
+# Declared so the convention survives without a formatter in the tree.
+# Nothing here installs; every editor that reads .editorconfig honours it.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 88
+
+[*.md]
+# Prose wraps at 80 and trailing spaces are not a line break here.
+max_line_length = 80
+trim_trailing_whitespace = false
+
+[*.{tsv,svg,json}]
+# Data and generated output. Do not reformat either: the TSVs are hand-edited
+# and column-aligned by tab, and the SVGs are byte-compared against renders.
+trim_trailing_whitespace = false
+insert_final_newline = true
+
+[reference/vendor/**]
+# Upstream, unmodified. See reference/NOTICE.
+trim_trailing_whitespace = false
+insert_final_newline = false
