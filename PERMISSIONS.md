@@ -25,6 +25,12 @@ repository cannot, and that is precisely why it exists.** `install` and
 | a scalable icon | `$XDG_DATA_HOME/icons/hicolor/scalable/apps/console-colophon-*.svg` |
 | profiles | `$XDG_DATA_HOME/konsole/console-colophon-*.profile` |
 | D-Bus calls | `org.kde.konsole.Session` on the session bus |
+| escape sequences | stdout, from `emit` |
+
+`emit` writes to stdout and to no file. It is here rather than in the
+specification repository because an escape sequence is addressed to a
+particular terminal, and choosing which one this terminal can read is a
+decision about somebody's terminal.
 
 All of it is namespaced by `ICON_PREFIX`, so `uninstall --all` takes back
 exactly what this tool put there and nothing else. `doctor` reports the paths

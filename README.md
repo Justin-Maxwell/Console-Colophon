@@ -2,7 +2,8 @@
 
 ![](.identicon/repository-identicon.svg)
 
-Per-project identicons on the desktop: the XDG icon theme, and Konsole tabs.
+Per-project identicons on the desktop: the XDG icon theme, Konsole tabs, and the
+terminal itself.
 
 A project's identicon is derived from the project itself — its git remote — by
 the [Repository Identicon specification](../Repository-Identicon). That
@@ -12,7 +13,12 @@ This tool is one of the places that mark is put in front of a human.
 ```bash
 python3 /path/to/console-colophon.py install     # the icon, into ~/.local/share/icons
 python3 /path/to/console-colophon.py profile --apply   # a Konsole profile, and switch to it
+python3 /path/to/console-colophon.py emit        # the mark, on stdout
 ```
+
+`console-colophon.py` and `text-identicon.py` are a pair and must be deployed
+together: `emit`'s text styles need the second one's sextant table and emoji
+palette. `doctor` reports whether it is there.
 
 ## The two routes onto a Konsole tab, and why there are two
 
@@ -52,8 +58,36 @@ of tree at all.
 | `probe` | which D-Bus methods this Konsole exposes |
 | `sessions` | what is on the session bus |
 | `demo` | probe, then exercise both routes on one session |
+| `emit` | the mark on stdout, in one of six styles |
 | `derive` | the grid and colour for a key, for conformance checking |
 | `doctor` | the environment this tool depends on. Writes nothing. |
+
+## The third route: straight at the terminal
+
+`emit` writes the mark to stdout. `SPEC.md` §§ Renderings, Terminal and Text
+define the styles and rank them; this is the implementation of them.
+
+| `--style` | what it writes |
+|---|---|
+| `icon` | the PNG in an inline-image escape sequence, falling back to `text` where the terminal takes no image |
+| `image` | the same escape sequence, forced |
+| `text` | two lines of sextants, then the tricolour — no escape sequences at all, so it survives a channel that strips ANSI |
+| `full` | the 5×5 grid as ANSI background blocks |
+| `banner` | `text`, with the project name and key beside it |
+| `line` | one line: a colour chip and the project name, for a prompt |
+
+`--protocol` and `--colour` are detected from the environment and can be
+overridden. `NO_COLOR` wins over both, per no-color.org.
+
+The inline image is a PNG at `--size` pixels, 40 by default, because **Konsole
+ignores the protocol's own width and height arguments** — the PNG's own pixel
+size is what decides how large the mark lands, and 40 is five cells of eight,
+about two text rows tall.
+
+These came from the specification repository, which had them behind a
+Claude Code hook. The hook went; the renderings came here. Where bytes land on
+a terminal is a decision about somebody's terminal, which is the Scope rule
+below.
 
 ## The derivation is vendored, not imported
 
@@ -82,8 +116,15 @@ python3 -m unittest discover -s tests -t tests
 key and how a key reaches each medium; **out** is where a tool chooses to
 display the result. Everything in this repository is on the far side of that
 line, and everything on the near side stays in the specification repository —
-the key, the grid, the colour, the derived names, every rendering, and `apply`,
-which writes the artifacts a repository commits.
+the key, the grid, the colour, the derived names, and `apply`, which writes the
+artifacts a repository commits.
+
+The renderings are the one thing that sits on both sides, and they are split at
+the same rule. Turning a key into bytes is in, and stays there: the
+specification repository writes `.png`, `.svg`, `.colour`, `.grid`,
+`.tricolour`, `.sextant`, `.octant` and `.txt`. Wrapping those bytes in an
+escape sequence and choosing which one this terminal can read is out, and is
+`emit`, here.
 
 The one thing this repository chooses for itself is `ICON_PREFIX`, which the
 specification explicitly leaves to the implementing tool so that two tools

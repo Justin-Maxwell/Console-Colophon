@@ -6,16 +6,21 @@ colour. This tool puts that mark where a desktop can see it.
 
     icon theme   install, list, uninstall
     Konsole      profile, badge, probe, sessions, demo
+    terminal     emit
     checking     derive, doctor
 
 The derivation is **vendored** from the Repository-Identicon specification, not
 imported. That is the intended shape: what holds implementations together is
 `vectors.json`, checked by `tests/`, not a package. See README.md.
 
+`text-identicon.py` must sit beside this file: `emit`'s text styles need its
+sextant table and emoji palette.
+
 Standard library only. Every subprocess is invoked with an argument list.
 """
 
 import argparse
+import base64
 import hashlib
 import json
 import math
@@ -468,6 +473,236 @@ def render_ansi(key):
 
 
 # =============================================================================
+# This tool: putting a mark on a terminal
+#
+# SPEC.md §§ Renderings, Terminal and Text define these and rank them: inline
+# image first, then a lattice with the tricolour, then the tricolour alone.
+# What they do not decide is *where the bytes go*, and that is a decision about
+# somebody's terminal rather than about the mark -- which is the Scope rule, so
+# it lives here.
+#
+# The escape sequences are held to nothing but this file. `vectors.json` pins
+# the grid and the colour, and those are checked in the vendored section above;
+# an escape sequence is a wrapper around bytes that are already pinned.
+# =============================================================================
+
+# ---- Terminal colour ----
+
+TRUECOLOR = "truecolor"
+INDEXED = "256"
+NONE = "none"
+COLOUR_DEPTHS = (TRUECOLOR, INDEXED, NONE)
+
+
+def resolve_colour_depth(requested=None, environ=None):
+    """Pick a colour depth. NO_COLOR wins over everything, per no-color.org."""
+    environ = os.environ if environ is None else environ
+    if environ.get("NO_COLOR") is not None:
+        return NONE
+    if requested and requested != "auto":
+        return requested
+    if environ.get("COLORTERM", "").lower() in ("truecolor", "24bit"):
+        return TRUECOLOR
+    return INDEXED
+
+
+def _xterm256(rgb):
+    """Nearest colour in the xterm 6x6x6 cube."""
+    red, green, blue = (int(component * 5 / 255 + 0.5) for component in rgb)
+    return 16 + 36 * red + 6 * green + blue
+
+
+def _fg(rgb, depth):
+    if depth == NONE:
+        return ""
+    if depth == TRUECOLOR:
+        return "\033[38;2;{};{};{}m".format(*rgb)
+    return f"\033[38;5;{_xterm256(rgb)}m"
+
+
+RESET = "\033[0m"
+
+CHIP = "█"
+
+# The text rendering lives in text-identicon.py, which takes a grid and a colour
+# and nothing else. Loaded by path because the file name carries a hyphen.
+#
+# **These two files are a pair and must be deployed together**: the sextant
+# table and the emoji palette live next door. `doctor` reports whether the
+# sibling is present.
+TEXT_MODULE = "text-identicon.py"
+_TEXT = None
+
+
+def text_module_path():
+    return pathlib.Path(__file__).with_name(TEXT_MODULE)
+
+
+def _text_module():
+    global _TEXT
+    if _TEXT is None:
+        import importlib.util
+        path = text_module_path()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{TEXT_MODULE} must sit beside {pathlib.Path(__file__).name}; "
+                f"the text renderings need its sextant table")
+        spec = importlib.util.spec_from_file_location("text_identicon", path)
+        _TEXT = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_TEXT)
+    return _TEXT
+
+
+def render_text(key, chroma=MARK_CHROMA, lightness=MARK_LIGHTNESS):
+    """The identicon as two lines of three characters: the sextant grid, then
+    the tricolour.
+
+    One glyph covers six cells, so a cell is not separately addressable and the
+    colour lives in the emoji squares rather than in an escape sequence.
+    """
+    grid = identicon_grid(key)
+    colour = identicon_colour(key, chroma, lightness)
+    return _text_module().text(grid, colour).split("\n")
+
+
+def render_banner(key, source=None, depth=TRUECOLOR, **kwargs):
+    """The identicon with the project name beside it."""
+    rows = render_text(key, kwargs.get("chroma", MARK_CHROMA),
+                       kwargs.get("lightness", MARK_LIGHTNESS))
+    colour = _colour_for(key, kwargs)
+    name = project_name(key)
+    if depth != NONE:
+        name = f"{_fg(colour, depth)}{name}{RESET}"
+    labels = [name, key if source != "path" else ""]
+    return [f"{row}  {label}".rstrip() for row, label in zip(rows, labels)]
+
+
+def render_line(key, depth=TRUECOLOR, **kwargs):
+    """One line: the colour, then the project name. For the tightest prompts.
+
+    The grid cannot be one line -- five rows over either lattice is two text
+    lines and no arrangement makes it one -- so anything that affords a single
+    line loses the pattern and keeps only the colour. A coloured chip where
+    escape sequences work, the tricolour where they do not.
+
+    The tricolour takes the grid as well as the colour, because its order comes
+    from the grid. Calling it with the colour alone raised `TypeError` on every
+    `--colour none` run, which is the one path this branch exists to serve.
+    """
+    colour = _colour_for(key, kwargs)
+    mark = (f"{_fg(colour, depth)}{CHIP}{RESET}" if depth != NONE
+            else _text_module().tricolour(colour, identicon_grid(key)))
+    return [f"{mark} {project_name(key)}"]
+
+
+# ---- Inline images ----
+#
+# The blocks above are an approximation. Where the terminal can take a real
+# image, send the PNG itself, base64 in an escape sequence.
+#
+# Konsole implements the iTerm2 file protocol: Vt102Emulation::osc_put matches
+# the literal "1337;File=" and then waits for the ":" terminator, so arguments
+# between the two are tolerated and ignored. It also handles kitty APC graphics
+# and sixel.
+
+ITERM2 = "iterm2"
+KITTY = "kitty"
+TEXT = "text"
+PROTOCOLS = (ITERM2, KITTY, TEXT)
+
+# Native pixel size for the inline image. Konsole ignores the protocol's own
+# width and height arguments, so the PNG's own size is what decides how big it
+# lands: five cells of eight pixels, about two text rows tall.
+INLINE_SIZE = 40
+
+
+def resolve_protocol(requested=None, environ=None):
+    """Pick a graphics protocol from the environment.
+
+    Detection is by environment variable rather than by querying the terminal,
+    because something waiting on a terminal reply hangs when nothing answers.
+    """
+    environ = os.environ if environ is None else environ
+    if requested and requested != "auto":
+        return requested
+    if environ.get("NO_COLOR") is not None:
+        return TEXT
+    if environ.get("KITTY_WINDOW_ID") or "kitty" in environ.get("TERM", "").lower():
+        return KITTY
+    if environ.get("KONSOLE_VERSION") or environ.get("KONSOLE_DBUS_SESSION"):
+        return ITERM2
+    if environ.get("TERM_PROGRAM", "") in ("iTerm.app", "WezTerm", "ghostty", "vscode"):
+        return ITERM2
+    return TEXT
+
+
+def iterm2_image(png):
+    """OSC 1337 File, the iTerm2 inline image protocol.
+
+    No argument may contain a colon, since the colon is what terminates the
+    argument list and begins the payload.
+    """
+    payload = base64.b64encode(png).decode("ascii")
+    args = ";".join(["inline=1", f"size={len(png)}", "preserveAspectRatio=1"])
+    return f"\033]1337;File={args}:{payload}\a"
+
+
+def kitty_image(png, chunk_size=4096):
+    """APC _G, the kitty graphics protocol. Chunked, as the protocol requires."""
+    payload = base64.b64encode(png).decode("ascii")
+    chunks = [payload[i:i + chunk_size] for i in range(0, len(payload), chunk_size)] or [""]
+    out = []
+    for index, chunk in enumerate(chunks):
+        more = 1 if index < len(chunks) - 1 else 0
+        control = f"a=T,f=100,m={more}" if index == 0 else f"m={more}"
+        out.append(f"\033_G{control};{chunk}\033\\")
+    return "".join(out)
+
+
+def render_inline(key, protocol, size=INLINE_SIZE, **kwargs):
+    """The identicon as a real image, or None if the protocol cannot carry one."""
+    if protocol not in (ITERM2, KITTY):
+        return None
+    png = render_png(key, fit_block(size), edge=size, **kwargs)
+    return iterm2_image(png) if protocol == ITERM2 else kitty_image(png)
+
+
+# The lambdas normalise the signatures: `render` hands every style `source` and
+# `depth`, and only `banner` wants both.
+_TEXT_STYLES = {
+    TEXT: lambda key, source=None, depth=TRUECOLOR, **kw: render_text(
+        key, kw.get("chroma", MARK_CHROMA), kw.get("lightness", MARK_LIGHTNESS)),
+    "full": lambda key, source=None, depth=TRUECOLOR, **kw: render_ansi(key).splitlines(),
+    "banner": render_banner,
+    "line": lambda key, source=None, depth=TRUECOLOR, **kw: render_line(key, depth, **kw),
+}
+
+STYLES = ("icon", "image", TEXT, "full", "banner", "line")
+
+
+def render(key, style="icon", source=None, depth=TRUECOLOR, protocol=TEXT,
+           size=INLINE_SIZE, **kwargs):
+    """Return everything to write for one identicon, trailing newline included.
+
+    The default is the icon and nothing else -- no project name, no key. The
+    identicon is the message; anything beside it is the terminal's own business.
+    """
+    if style == "icon":
+        inline = render_inline(key, protocol, size, **kwargs)
+        if inline is not None:
+            return inline + "\n"
+        style = TEXT
+
+    if style == "image":
+        inline = render_inline(key, protocol if protocol != TEXT else ITERM2,
+                               size, **kwargs)
+        return (inline or "") + "\n"
+
+    lines = _TEXT_STYLES[style](key, source=source, depth=depth, **kwargs)
+    return "".join(line + "\n" for line in lines)
+
+
+# =============================================================================
 # This tool: the desktop
 #
 # Everything below is a side effect -- a file under ~/.local/share, or a D-Bus
@@ -905,6 +1140,27 @@ def cmd_demo(args):
     return 0
 
 
+def cmd_emit(args):
+    """Print the identicon to stdout, in one of the styles SPEC.md defines.
+
+    Stdout and nothing else. An earlier version of this in Repository-Identicon
+    opened `/dev/tty` and swallowed every error to exit 0, because it was
+    written to be a Claude Code hook; both of those are properties of a caller,
+    not of a rendering, and neither came with it.
+    """
+    key, source = _resolve_from_args(args)
+    sys.stdout.write(render(
+        key,
+        style=args.style,
+        source=source,
+        depth=resolve_colour_depth(args.colour),
+        protocol=resolve_protocol(args.protocol),
+        size=args.size,
+        **_render_kwargs(args),
+    ))
+    return 0
+
+
 def cmd_derive(args):
     """Print the grid and colour for a key, in the shape `validate` expects."""
     key = args.key
@@ -919,6 +1175,10 @@ def cmd_derive(args):
 
 def cmd_doctor(args):
     """Report the environment this tool depends on. Writes nothing."""
+    sibling = text_module_path()
+    print(f"text-identicon.py {sibling if sibling.is_file() else 'NOT FOUND'}")
+    print(f"protocol         {resolve_protocol()}")
+    print(f"colour depth     {resolve_colour_depth()}")
     print(f"qdbus            {find_qdbus() or 'NOT FOUND'}")
     print(f"gdbus            {find_gdbus() or 'NOT FOUND'}")
     print(f"icon theme root  {icon_theme_root()}")
@@ -1011,6 +1271,20 @@ def build_parser():
     demo.add_argument("--label", default=None)
     demo.add_argument("--parent", default="FALLBACK/")
     demo.set_defaults(func=cmd_demo, clear=False, apply=True)
+
+    emit = sub.add_parser(
+        "emit",
+        help="print the identicon to stdout, in one of the specified styles",
+        description="Writes to stdout and nothing else. icon sends a real "
+                    "image where the terminal takes one and falls back to "
+                    "text where it does not.")
+    add_common(emit, render=True)
+    emit.add_argument("--style", choices=STYLES, default="icon")
+    emit.add_argument("--protocol", choices=("auto", *PROTOCOLS), default="auto")
+    emit.add_argument("--size", type=int, default=INLINE_SIZE,
+                      help="inline image side in pixels")
+    emit.add_argument("--colour", choices=("auto", *COLOUR_DEPTHS), default="auto")
+    emit.set_defaults(func=cmd_emit)
 
     derive = sub.add_parser(
         "derive",

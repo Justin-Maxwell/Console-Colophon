@@ -224,10 +224,91 @@ class TestScope(unittest.TestCase):
                                  cc.konsole_profile_dir())
 
     def test_this_repository_defines_no_artifact_writer(self):
-        """`apply` and everything it writes belong to Repository-Identicon."""
+        """`apply` and the `.identicon/` files belong to Repository-Identicon.
+
+        The terminal renderings used to be on this list and are not any more:
+        `emit` and everything under it came here, because where bytes land on a
+        terminal is a decision about somebody's terminal. Writing files into
+        somebody's repository is still not this tool's business.
+        """
         for gone in ("install_into_repo", "artifact_bytes", "readme_state",
-                     "render_text", "render_inline", "cmd_emit"):
+                     "artifact_names", "artifact_paths"):
             self.assertFalse(hasattr(cc, gone), f"{gone} should not be here")
+
+    def test_the_terminal_renderings_arrived_whole(self):
+        """Half a move is worse than none: a style naming a routine that did
+        not come across fails only when somebody asks for that style."""
+        for name in ("render", "render_inline", "render_text", "render_banner",
+                     "render_line", "render_ansi", "iterm2_image", "kitty_image",
+                     "resolve_protocol", "resolve_colour_depth", "cmd_emit"):
+            self.assertTrue(hasattr(cc, name), f"{name} did not come across")
+        self.assertEqual(("icon", "image", "text", "full", "banner", "line"),
+                         cc.STYLES)
+
+
+# ---- The terminal renderings ----
+
+class TestTheTerminalRenderings(unittest.TestCase):
+    """SPEC.md §§ Renderings, Terminal and Text define these; this is where they
+    are implemented. `vectors.json` pins the grid and the colour, so what is
+    left to check is that every style produces something on every vector, and
+    that the styles keep the shapes their media depend on."""
+
+    def test_every_style_renders_every_vector(self):
+        for vector in vectors:
+            for style in cc.STYLES:
+                with self.subTest(key=vector["key"], style=style):
+                    out = cc.render(vector["key"], style=style,
+                                    protocol=cc.ITERM2, depth=cc.TRUECOLOR)
+                    self.assertTrue(out.endswith("\n"), style)
+                    self.assertTrue(out.strip(), f"{style} rendered nothing")
+
+    def test_the_line_style_is_one_line_at_every_depth(self):
+        """It exists for a medium that affords exactly one, so a second line
+        would not be degraded output -- it would be broken output. At depth
+        `none` this once raised TypeError instead."""
+        for vector in vectors:
+            for depth in cc.COLOUR_DEPTHS:
+                with self.subTest(key=vector["key"], depth=depth):
+                    out = cc.render(vector["key"], style="line", depth=depth)
+                    self.assertEqual(1, out.count("\n"), repr(out))
+
+    def test_the_text_style_carries_no_escape_sequence(self):
+        """SPEC.md: escape-sequence colour is not part of this rendering. The
+        colour rides in the emoji squares, which is what makes it survive a
+        channel that strips ANSI."""
+        for vector in vectors:
+            with self.subTest(key=vector["key"]):
+                out = cc.render(vector["key"], style="text", depth=cc.TRUECOLOR)
+                self.assertNotIn("\033", out)
+
+    def test_icon_falls_back_to_text_where_nothing_carries_an_image(self):
+        key = vectors[0]["key"]
+        self.assertEqual(cc.render(key, style="text", protocol=cc.TEXT),
+                         cc.render(key, style="icon", protocol=cc.TEXT))
+
+    def test_the_inline_image_declares_the_pngs_own_byte_count(self):
+        """`size` is the payload length, and the PNG's pixel size is what
+        decides how large it lands: Konsole ignores the protocol's width and
+        height arguments."""
+        key = vectors[0]["key"]
+        for size in (40, 64):
+            with self.subTest(size=size):
+                png = cc.render_png(key, cc.fit_block(size), edge=size)
+                self.assertIn(f"size={len(png)}",
+                              cc.render_inline(key, cc.ITERM2, size))
+
+    def test_the_sibling_text_module_is_named_when_it_is_missing(self):
+        """`emit`'s text styles need it, and a missing sibling must say which
+        file rather than raising something about importlib."""
+        with tempfile.TemporaryDirectory() as tmp:
+            alone = pathlib.Path(tmp) / "console-colophon.py"
+            alone.write_bytes((ROOT / "console-colophon.py").read_bytes())
+            done = subprocess.run(
+                ["python3", str(alone), "emit", "--style", "text", str(ROOT)],
+                capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, done.returncode)
+            self.assertIn("text-identicon.py", done.stderr)
 
 
 if __name__ == "__main__":
